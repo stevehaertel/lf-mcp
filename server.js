@@ -85,18 +85,18 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: "query_langflow_agent",
-        description: "Query the Langflow agent about revenue data in the Technology Sales Revenue data product",
+        name: "query_technology_sales_revenue",
+        description: "Query and analyze revenue data from technology sales. This tool provides insights into sales performance, revenue trends, customer segments, product categories, and financial metrics for technology products and services. Use this tool to answer questions about sales figures, revenue analysis, customer behavior, and business performance in the technology sector.",
         inputSchema: {
           type: "object",
           properties: {
             message: {
               type: "string",
-              description: "The query to send to the Langflow agent",
+              description: "Your question about technology sales revenue. Examples: 'What is the revenue at risk for today?', 'Show me revenue by product category', 'Which customers have the highest revenue?', 'What are the revenue trends over time?'",
             },
             session_id: {
               type: "string",
-              description: "Optional session ID for conversation context",
+              description: "Optional session ID to maintain conversation context across multiple queries",
             },
           },
           required: ["message"],
@@ -108,7 +108,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // Register call tool handler
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name !== "query_langflow_agent") {
+  if (request.params.name !== "query_technology_sales_revenue") {
     throw new Error(`Unknown tool: ${request.params.name}`);
   }
 
