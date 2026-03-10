@@ -6,7 +6,7 @@
  */
 
 import express from 'express';
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
@@ -78,24 +78,31 @@ app.post('/mcp', async (req, res) => {
 
   try {
     // Create a new MCP server instance for this connection
-    const server = new McpServer({
-      name: "langflow-agent",
-      version: "1.0.0",
-    });
+    const server = new Server(
+      {
+        name: "langflow-agent",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
 
     // Register list tools handler
-    server.setRequestHandler({ method: "tools/list" }, async () => {
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
           {
-            name: "query_langflow_agent",
-            description: "Send a message to the Langflow agent and receive a response",
+            name: "query_revenue_data",
+            description: "Query data product hub about revenue data in the Technology Sales Revenue",
             inputSchema: {
               type: "object",
               properties: {
                 message: {
                   type: "string",
-                  description: "The message to send to the Langflow agent",
+                  description: "The query to send to the Langflow agent",
                 },
                 session_id: {
                   type: "string",
@@ -110,7 +117,7 @@ app.post('/mcp', async (req, res) => {
     });
 
     // Register call tool handler
-    server.setRequestHandler({ method: "tools/call" }, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (request.params.name !== "query_langflow_agent") {
         throw new Error(`Unknown tool: ${request.params.name}`);
       }
