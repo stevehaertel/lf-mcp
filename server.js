@@ -3,12 +3,11 @@
 /**
  * Langflow MCP Server (SSE Transport)
  * Exposes MCP tools via HTTP/SSE for remote hosting
- * Can be deployed to Render.com or similar services
  */
 
 import express from 'express';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 // Get configuration from environment variables
@@ -59,35 +58,77 @@ app.get('/', (req, res) => {
     transport: 'SSE',
     endpoints: {
       health: '/health',
-      mcp: '/mcp (POST with x-api-key header)'
+      mcp: '/mcp (POST with x-api-key header for SSE)'
     }
   });
 });
 
-// MCP endpoint with API key authentication
+// MCP SSE endpoint
 app.post('/mcp', async (req, res) => {
-  // Validate API key from header
+  // Validate API key
   const apiKey = req.header('x-api-key');
   if (!apiKey || apiKey.trim() !== MCP_API_KEY) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
   }
 
-  console.log('MCP connection established');
+  console.log('MCP SSE connection established');
 
-  // Create MCP server instance
-  const server = new McpServer({
-    name: "langflow-agent",
-    version: "1.0.0"
-  });
-
-  // Add the Langflow query tool
-  server.tool(
-    "query_langflow_agent",
+  // Create a new MCP server instance for this connection
+  const server = new Server(
     {
-      message: z.string().describe("The message to send to the Langflow agent"),
-      session_id: z.string().optional().describe("Optional session ID for conversation context"),
+      name: "langflow-agent",
+      version: "1.0.0",
     },
-    async ({ message, session_id }) => {
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  // Register the Langflow query tool
+  server.setRequestHandler(
+    {
+      method: "tools/list",
+    },
+    async () => {
+      return {
+        tools: [
+          {
+            name: "query_langflow_agent",
+            description: "Send a message to the Langflow agent and receive a response",
+            inputSchema: {
+              type: "object",
+              properties: {
+                message: {
+                  type: "string",
+                  description: "The message to send to the Langflow agent",
+                },
+                session_id: {
+                  type: "string",
+                  description: "Optional session ID for conversation context",
+                },
+              },
+              required: ["message"],
+            },
+          },
+        ],
+      };
+    }
+  );
+
+  // Handle tool calls
+  server.setRequestHandler(
+    {
+      method: "tools/call",
+    },
+    async (request) => {
+      if (request.params.name !== "query_langflow_agent") {
+        throw new Error(`Unknown tool: ${request.params.name}`);
+      }
+
+      const { message, session_id } = request.params.arguments;
+
       try {
         // Build the Langflow API URL
         const url = `${DATASTAX_LANGFLOW_URL}/lf/${LANGFLOW_TENANT_ID}/api/v1/run/${FLOW_ID}`;
@@ -173,8 +214,8 @@ app.post('/mcp', async (req, res) => {
     }
   );
 
-  // Create SSE transport and connect
-  const transport = new SSEServerTransport('/mcp', res);
+  // Create SSE transport
+  const transport = new SSEServerTransport("/mcp", res);
   await server.connect(transport);
   
   console.log('MCP server connected via SSE');
