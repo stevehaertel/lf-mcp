@@ -87,13 +87,13 @@ function createMCPServer() {
       tools: [
         {
           name: "query_technology_sales_revenue",
-          description: "Query and analyze revenue data from technology sales. This tool provides insights into sales performance, revenue trends, customer segments, product categories, and financial metrics for technology products and services. Use this tool to answer questions about sales figures, revenue analysis, customer behavior, and business performance in the technology sector.",
+          description: "Query and analyze revenue data from technology sales, or its data contract or semantic queries. This tool provides insights into sales performance, revenue trends, customer segments, product categories, and financial metrics for technology products and services. Use this tool to answer questions about sales figures, revenue analysis, customer behavior, and business performance in the technology sector.",
           inputSchema: {
             type: "object",
             properties: {
               message: {
                 type: "string",
-                description: "Your question about technology sales revenue. Examples: 'What is the revenue at risk for today?', 'Show me revenue by product category', 'Which customers have the highest revenue?', 'What are the revenue trends over time?'",
+                description: "Your question about technology sales revenue data or contract or semantic queries. Examples: 'What is the revenue at risk for today?', 'Show me revenue by product category', 'Which customers have the highest revenue?', 'What is allowed by the data contract?'",
               },
               session_id: {
                 type: "string",
