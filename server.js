@@ -67,47 +67,48 @@ app.get('/', (req, res) => {
   });
 });
 
-// Create a single MCP server instance
-const mcpServer = new Server(
-  {
-    name: "langflow-agent",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+// Factory function to create a new MCP server instance for each connection
+function createMCPServer() {
+  const server = new Server(
+    {
+      name: "langflow-agent",
+      version: "1.0.0",
     },
-  }
-);
-
-// Register list tools handler
-mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "query_technology_sales_revenue",
-        description: "Query and analyze revenue data from technology sales. This tool provides insights into sales performance, revenue trends, customer segments, product categories, and financial metrics for technology products and services. Use this tool to answer questions about sales figures, revenue analysis, customer behavior, and business performance in the technology sector.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            message: {
-              type: "string",
-              description: "Your question about technology sales revenue. Examples: 'What is the revenue at risk for today?', 'Show me revenue by product category', 'Which customers have the highest revenue?', 'What are the revenue trends over time?'",
-            },
-            session_id: {
-              type: "string",
-              description: "Optional session ID to maintain conversation context across multiple queries",
-            },
-          },
-          required: ["message"],
-        },
+    {
+      capabilities: {
+        tools: {},
       },
-    ],
-  };
-});
+    }
+  );
 
-// Register call tool handler
-mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  // Register list tools handler
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: [
+        {
+          name: "query_technology_sales_revenue",
+          description: "Query and analyze revenue data from technology sales. This tool provides insights into sales performance, revenue trends, customer segments, product categories, and financial metrics for technology products and services. Use this tool to answer questions about sales figures, revenue analysis, customer behavior, and business performance in the technology sector.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              message: {
+                type: "string",
+                description: "Your question about technology sales revenue. Examples: 'What is the revenue at risk for today?', 'Show me revenue by product category', 'Which customers have the highest revenue?', 'What are the revenue trends over time?'",
+              },
+              session_id: {
+                type: "string",
+                description: "Optional session ID to maintain conversation context across multiple queries",
+              },
+            },
+            required: ["message"],
+          },
+        },
+      ],
+    };
+  });
+
+  // Register call tool handler
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
   console.log('[TOOL] Tool call received');
   console.log('[TOOL] Tool name:', request.params.name);
   console.log('[TOOL] Arguments:', JSON.stringify(request.params.arguments));
@@ -241,10 +242,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true,
     };
   }
-});
+  });
 
-// Store active transports by session ID
+  return server;
+}
+
+// Store active transports and their associated servers by session ID
 const activeTransports = new Map();
+const activeServers = new Map();
 
 // SSE endpoint (GET) - Establishes the SSE connection
 app.get('/sse', async (req, res) => {
@@ -261,23 +266,29 @@ app.get('/sse', async (req, res) => {
   }
 
   console.log('[SSE] Authentication successful');
-  console.log('[SSE] Creating SSE transport...');
+  console.log('[SSE] Creating new MCP server instance for this connection...');
 
   try {
+    // Create a new MCP server instance for this connection
+    const mcpServer = createMCPServer();
+    console.log('[SSE] MCP server instance created');
+    
     // Create SSE transport with the response object
     console.log('[SSE] Instantiating SSEServerTransport with endpoint: /message');
     const transport = new SSEServerTransport('/message', res);
     console.log('[SSE] Transport created with session ID:', transport.sessionId);
     
-    // Store transport by session ID for routing messages
+    // Store both transport and server by session ID
     activeTransports.set(transport.sessionId, transport);
-    console.log('[SSE] Transport stored. Active transports:', activeTransports.size);
+    activeServers.set(transport.sessionId, mcpServer);
+    console.log('[SSE] Transport and server stored. Active connections:', activeTransports.size);
     
     // Clean up on close
     transport.onclose = () => {
       console.log(`[SSE] Transport closed for session ${transport.sessionId}`);
       activeTransports.delete(transport.sessionId);
-      console.log('[SSE] Active transports after cleanup:', activeTransports.size);
+      activeServers.delete(transport.sessionId);
+      console.log('[SSE] Active connections after cleanup:', activeTransports.size);
     };
     
     // Set up error handler
