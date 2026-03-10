@@ -241,10 +241,11 @@ app.get('/sse', async (req, res) => {
     };
     
     // Connect the MCP server to this transport
-    console.log('[SSE] Connecting MCP server to transport...');
+    // Note: mcpServer.connect() automatically calls transport.start()
+    console.log('[SSE] Connecting MCP server to transport (this will start the SSE connection)...');
     await mcpServer.connect(transport);
     
-    console.log(`[SSE] ✓ MCP server connected successfully (session: ${transport.sessionId})`);
+    console.log(`[SSE] ✓ MCP server connected and SSE started successfully (session: ${transport.sessionId})`);
   } catch (error) {
     console.error('[SSE] ✗ Error setting up SSE connection:');
     console.error('[SSE] Error name:', error.name);
