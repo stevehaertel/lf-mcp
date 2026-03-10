@@ -108,84 +108,129 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // Register call tool handler
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  console.log('[TOOL] Tool call received');
+  console.log('[TOOL] Tool name:', request.params.name);
+  console.log('[TOOL] Arguments:', JSON.stringify(request.params.arguments));
+  
   if (request.params.name !== "query_technology_sales_revenue") {
+    console.log('[TOOL] ✗ Unknown tool requested');
     throw new Error(`Unknown tool: ${request.params.name}`);
   }
 
   const { message, session_id } = request.params.arguments;
+  console.log('[TOOL] Message:', message);
+  console.log('[TOOL] Session ID:', session_id || 'none');
 
   try {
     // Build the Langflow API URL
     const url = `${DATASTAX_LANGFLOW_URL}/lf/${LANGFLOW_TENANT_ID}/api/v1/run/${FLOW_ID}`;
     
-    console.log(`Querying Langflow: ${message.substring(0, 50)}...`);
+    console.log('[TOOL] Langflow URL:', url);
+    console.log('[TOOL] Calling Langflow API...');
     
-    // Make the API request
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${APPLICATION_TOKEN}`,
-        "X-DataStax-Current-Org": ASTRA_ORG_ID
-      },
-      body: JSON.stringify({
-        input_value: message,
-        input_type: "chat",
-        output_type: "chat",
-        ...(session_id ? { session_id } : {})
-      })
-    });
+    const startTime = Date.now();
+    
+    // Make the API request with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${APPLICATION_TOKEN}`,
+          "X-DataStax-Current-Org": ASTRA_ORG_ID
+        },
+        body: JSON.stringify({
+          input_value: message,
+          input_type: "chat",
+          output_type: "chat",
+          ...(session_id ? { session_id } : {})
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      const elapsed = Date.now() - startTime;
+      console.log(`[TOOL] Langflow API responded in ${elapsed}ms with status ${response.status}`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { raw: errorText };
+      if (!response.ok) {
+        console.log('[TOOL] ✗ Langflow API returned error status');
+        const errorText = await response.text();
+        console.log('[TOOL] Error response:', errorText.substring(0, 500));
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { raw: errorText };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Langflow API error (${response.status}): ${JSON.stringify(errorData, null, 2)}`,
+            },
+          ],
+          isError: true,
+        };
       }
+
+      // Parse the response
+      console.log('[TOOL] Parsing Langflow response...');
+      const data = await response.json();
+      console.log('[TOOL] Response data structure:', JSON.stringify(data).substring(0, 200));
+      
+      // Extract the message from the response
+      let agentResponse = "No response from agent";
+      
+      if (data.outputs && data.outputs.length > 0) {
+        const output = data.outputs[0];
+        if (output.outputs && output.outputs.length > 0) {
+          const result = output.outputs[0];
+          if (result.results && result.results.message) {
+            const messageData = result.results.message;
+            agentResponse = messageData.text || JSON.stringify(messageData);
+          }
+        }
+      }
+      
+      console.log(`[TOOL] ✓ Extracted response: ${agentResponse.substring(0, 100)}...`);
       
       return {
         content: [
           {
             type: "text",
-            text: `Langflow API error (${response.status}): ${JSON.stringify(errorData, null, 2)}`,
+            text: agentResponse,
           },
         ],
-        isError: true,
       };
-    }
-
-    // Parse the response
-    const data = await response.json();
-    
-    // Extract the message from the response
-    let agentResponse = "No response from agent";
-    
-    if (data.outputs && data.outputs.length > 0) {
-      const output = data.outputs[0];
-      if (output.outputs && output.outputs.length > 0) {
-        const result = output.outputs[0];
-        if (result.results && result.results.message) {
-          const messageData = result.results.message;
-          agentResponse = messageData.text || JSON.stringify(messageData);
-        }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        console.log('[TOOL] ✗ Request timed out after 30 seconds');
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Request timed out after 30 seconds. The Langflow API may be slow or unreachable.",
+            },
+          ],
+          isError: true,
+        };
       }
+      throw fetchError;
     }
-    
-    console.log(`Response: ${agentResponse.substring(0, 100)}...`);
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: agentResponse,
-        },
-      ],
-    };
     
   } catch (error) {
-    console.error('Error querying Langflow:', error);
+    console.error('[TOOL] ✗ Error querying Langflow:');
+    console.error('[TOOL] Error name:', error.name);
+    console.error('[TOOL] Error message:', error.message);
+    console.error('[TOOL] Error stack:', error.stack);
+    
     return {
       content: [
         {
