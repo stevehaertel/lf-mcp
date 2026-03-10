@@ -6,9 +6,12 @@
  */
 
 import express from 'express';
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { z } from "zod";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 // Get configuration from environment variables
 const {
@@ -73,25 +76,15 @@ app.post('/mcp', async (req, res) => {
 
   console.log('MCP SSE connection established');
 
-  // Create a new MCP server instance for this connection
-  const server = new Server(
-    {
+  try {
+    // Create a new MCP server instance for this connection
+    const server = new McpServer({
       name: "langflow-agent",
       version: "1.0.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
-  );
+    });
 
-  // Register the Langflow query tool
-  server.setRequestHandler(
-    {
-      method: "tools/list",
-    },
-    async () => {
+    // Register list tools handler
+    server.setRequestHandler({ method: "tools/list" }, async () => {
       return {
         tools: [
           {
@@ -114,15 +107,10 @@ app.post('/mcp', async (req, res) => {
           },
         ],
       };
-    }
-  );
+    });
 
-  // Handle tool calls
-  server.setRequestHandler(
-    {
-      method: "tools/call",
-    },
-    async (request) => {
+    // Register call tool handler
+    server.setRequestHandler({ method: "tools/call" }, async (request) => {
       if (request.params.name !== "query_langflow_agent") {
         throw new Error(`Unknown tool: ${request.params.name}`);
       }
@@ -211,14 +199,19 @@ app.post('/mcp', async (req, res) => {
           isError: true,
         };
       }
-    }
-  );
+    });
 
-  // Create SSE transport
-  const transport = new SSEServerTransport("/mcp", res);
-  await server.connect(transport);
-  
-  console.log('MCP server connected via SSE');
+    // Create SSE transport
+    const transport = new SSEServerTransport("/mcp", res);
+    await server.connect(transport);
+    
+    console.log('MCP server connected via SSE');
+  } catch (error) {
+    console.error('Error setting up MCP server:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
 });
 
 // Start the server
